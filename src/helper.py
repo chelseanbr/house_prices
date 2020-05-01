@@ -187,5 +187,5 @@ def fit_pred_score_Nfold(model, X_train, y_train, X_test, test_idx, target_col, 
     # Get N-fold Cross-Validation RMSE score
     if model_name is None:
         model_name=model.__class__.__name__
-    rmse = np.mean(np.sqrt(-cross_val_score(model, X_train, y_train, scoring='neg_mean_squared_error', cv=N)))
-    print(model_name + ' RMSE, {}-fold CV on Train Data: {:0.3f}'.format(N, rmse))
+    rmse = np.mean(np.sqrt(-cross_val_score(model, X_train, y_train, scoring='neg_mean_squared_log_error', cv=N)))
+    print(model_name + ' RMSLE, {}-fold CV on Train Data: {:0.3f}'.format(N, rmse))
