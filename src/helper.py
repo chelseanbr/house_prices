@@ -174,7 +174,7 @@ def plot_tree(tree, feature_list, out_file=None):
     return export_graphviz(tree, out_file=out_file, feature_names=feature_list)
 
 # Modeling
-def fit_pred_score_Nfold(model, X_train, y_train, X_test, model_name, test_idx, target_col, N=10, csv=None):
+def fit_pred_score_Nfold(model, X_train, y_train, X_test, test_idx, target_col, N=10, model_name=None, csv=None):
     # Fit model
     model.fit(X_train, y_train)
     # Predict
@@ -183,7 +183,9 @@ def fit_pred_score_Nfold(model, X_train, y_train, X_test, model_name, test_idx, 
     if csv is not None:
         y_pred_df = pd.DataFrame(y_pred, index=test_idx, columns=[target_col])
         y_pred_df.head()
-        y_pred_df.to_csv('submissions/' + csv)
+        y_pred_df.to_csv('submissions/' + csv + '.csv')
     # Get N-fold Cross-Validation RMSE score
+    if model_name is None:
+        model_name=model.__class__.__name__
     rmse = np.mean(np.sqrt(-cross_val_score(model, X_train, y_train, scoring='neg_mean_squared_error', cv=N)))
     print(model_name + ' RMSE, {}-fold CV on Train Data: {:0.3f}'.format(N, rmse))
