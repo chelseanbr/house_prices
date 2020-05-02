@@ -5,14 +5,21 @@ import pandas as pd
 from graphviz import Source
 from sklearn.tree import export_graphviz
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import cross_val_score
 
 # Pandas df exploration functions
 
-def print_null_ct(df):
-    # print how many null values each column has, if any
-        print('Count of Null Values per Column, if any:\n\n{}'.format(df.isnull().sum()[df.isnull().sum() > 0]))
+def get_nulls(df):
+    # # print how many null values each column has, if any
+    # print('Count of Null Values per Column, if any:\n\n{}'.format(df.isnull().sum()[df.isnull().sum() > 0]))
+    # missing data
+    total = df.isnull().sum().sort_values(ascending=False)
+    percent = (df.isnull().sum()/df.isnull().count()).sort_values(ascending=False)
+    missing_data = pd.concat([total, percent], axis=1, keys=['Total', 'Percent'])
+    missing_data['Type'] = [df[col].dtype for col in missing_data.index]
+    return missing_data
 
 def print_unique_ct(df):
     # print how many unique values each column has
@@ -25,6 +32,17 @@ def get_cols_of_type(df, type):
     cols = list(df.select_dtypes(type).columns)
     print('{} Columns ({}): \n{}'.format(type, len(cols), cols))
     return cols
+
+def standardize_data(df, var, N=10):
+    # standardize data
+    print('After standadizing ' + var + ':\n')
+    saleprice_scaled = StandardScaler().fit_transform(df[var][:,np.newaxis]);
+    low_range = saleprice_scaled[saleprice_scaled[:,0].argsort()][:N]
+    high_range= saleprice_scaled[saleprice_scaled[:,0].argsort()][-N:]
+    print('outer range ({} lowest) of the distribution:'.format(N))
+    print(low_range)
+    print('\nouter range ({} highest) of the distribution:'.format(N))
+    print(high_range)
 
 
 # Pipeline/prep functions
@@ -74,12 +92,13 @@ def ohe_obj(ohe, col, train_df, test_df):
 
     return train_obj_encoded_df, test_obj_encoded_df
 
-def pipeline(train_df, test_df):
+def pipeline_initial(train_df, test_df, target_col):
     updated_train_df = train_df.copy()
     updated_test_df = test_df.copy()
 
     # Ohe on object columns
     obj_cols = get_cols_of_type(train_df, 'object')
+    if target_col in obj_cols: obj_cols.remove(target_col)
     ohe = OneHotEncoder(handle_unknown="ignore", sparse=False)
 
     for col in obj_cols:
@@ -92,18 +111,42 @@ def pipeline(train_df, test_df):
         updated_test_df.drop(columns=[col, 'key_0'], inplace=True)
 
     # Impute nulls in number cols with mean
-    imp = SimpleImputer(strategy='mean')
+    # For int cols 
+    int_cols = get_cols_of_type(train_df, 'int64')
+    if target_col in int_cols: int_cols.remove(target_col)
+    for col in int_cols:
+        updated_train_df[col].fillna(train_df[col].mean(), inplace=True)
+        updated_test_df[col].fillna(test_df[col].mean(), inplace=True)
 
-    dfs = [updated_train_df, updated_test_df]
-    updated_dfs = []
-    for df in dfs:
-        idf=pd.DataFrame(imp.fit_transform(df))
-        idf.columns=df.columns
-        idf.index=df.index
-        updated_dfs.append(idf)
-    [updated_train_df, updated_test_df] = updated_dfs
+    # For float cols
+    float_cols = get_cols_of_type(train_df, 'float64')
+    if target_col in float_cols: float_cols.remove(target_col)
+    for col in float_cols:
+        updated_train_df[col].fillna(train_df[col].mean(), inplace=True)
+        updated_test_df[col].fillna(test_df[col].mean(), inplace=True)
+
+    # imp = SimpleImputer(strategy='mean')
+    # dfs = [updated_train_df, updated_test_df]
+    # updated_dfs = []
+    # for df in dfs:
+    #     idf=pd.DataFrame(imp.fit_transform(df))
+    #     idf.columns=df.columns
+    #     idf.index=df.index
+    #     updated_dfs.append(idf)
+    # [updated_train_df, updated_test_df] = updated_dfs
 
     return updated_train_df, updated_test_df
+
+def pipeline_improved(train_df, test_df, target_col):
+    updated_train_df, updated_test_df = pipeline_initial(train_df, test_df, target_col)
+
+    return updated_train_df, updated_test_df
+
+def remove_outliers(df, outliers, col):
+    return df.drop(df[df[col].isin(outliers)].index)
+
+def drop_cols(df, cols):
+    return df.drop(columns=cols, errors='ignore')
 
 # def pipeline(df):
 #     updated_df = df.copy()
@@ -132,6 +175,49 @@ def split_X_from_df(target, df):
 
 
 # Plotting functions
+
+def plot_hist(df, var):
+    # histogram of var
+    sns.distplot(df[var])
+    # skewness and kurtosis
+    print('Skewness: {:.4f}'.format(df[var].skew()))
+    print('Kurtosis: {:.4f}'.format(df[var].kurt()))
+
+def plot_scatter(df, var, target, ylim=(0,800000)):
+    # scatterplot of var/target
+    data = pd.concat([df[target], df[var]], axis=1)
+    data.plot.scatter(x=var, y=target, ylim=ylim, color='b')
+
+def plot_boxplot(df, var, target, figsize=(8, 6), ylim=(0,800000)):
+    # boxplot of var/target
+    data = pd.concat([df[target], df[var]], axis=1)
+    fig, ax = plt.subplots(figsize=figsize)
+    fig = sns.boxplot(x=var, y=target, data=data)
+    fig.axis(ymin=ylim[0], ymax=ylim[1])
+
+def plot_corr(df, figsize=(12, 9), vmax=.8):
+    # corr matrix of df
+    corrmat = df.corr()
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.heatmap(corrmat, vmax=vmax, square=True, xticklabels=True, yticklabels=True)
+
+def plot_target_corr(df, target, num_vars=5, figsize=(12, 9)):
+    # target correlation matrix
+    corrmat = df.corr()
+    cols = corrmat.nlargest(num_vars, target)[target].index
+    cm = np.corrcoef(df[cols].values.T)
+    sns.set(font_scale=1.25)
+    fig, ax = plt.subplots(figsize=figsize)
+    ax = sns.heatmap(cm, cbar=True, annot=True, square=True, fmt='.2f', annot_kws={'size': 12}, 
+                     yticklabels=cols.values, xticklabels=cols.values)
+    bottom, top = ax.get_ylim()
+    ax.set_ylim(bottom + 0.5, top - 0.5)
+    fig.tight_layout()
+
+def plot_scattermatrix(df, cols, height=2.5):
+    # scatter matrix
+    sns.set()
+    sns.pairplot(df[cols], height = height)
 
 def plot_pie(series, fig, ax):
     # fig, ax = plt.subplots(figsize=(8,8))
